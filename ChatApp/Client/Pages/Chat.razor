@@ -1,0 +1,128 @@
+﻿@page "/chat"
+@inject NavigationManager NavMan
+@using Microsoft.AspNetCore.SignalR.Client
+@using ChatApp.Shared
+@using Blazored.FluentValidation
+
+<h3>Chat</h3>
+@PorukaOdServera
+
+@if(chatAktivan)
+{
+	<EditForm Model="trenutnaPoruka" OnSubmit="PosaljiPoruku">
+		<p><InputText @bind-Value="trenutnaPoruka.Sadrzaj"/><button type="submit">Posalji</button></p>
+	</EditForm>
+	@foreach (Poruka p  in primljenePoruke)
+	{
+		<p>@p.VremeSlanja -- @p.Posiljaoc.Username: @p.Sadrzaj</p>
+	}
+}
+else
+{ 
+	<button @onclick="Toggle">
+		@if(LogIn)
+		{
+			<b>Registracija</b>
+		} else
+		{
+			<b>LogIn</b>
+		}
+	</button>
+
+	@if (!LogIn)
+	{
+		<EditForm Model="trenutniKorisnik" OnValidSubmit="Registruj">
+			<FluentValidationValidator />
+			<ValidationSummary/>
+			<p><label>Mail: </label><InputText @bind-Value="trenutniKorisnik.Email" /></p>
+			<p><label>Korisnicko: </label><InputText @bind-Value="trenutniKorisnik.Username" /></p>
+			<p><label>Sifra: </label><InputText @bind-Value="trenutniKorisnik.Password" /></p>
+			<button type="submit">Registruj se!</button>
+		</EditForm>
+	}else
+	{
+		<EditForm Model="trenutniKorisnik" OnSubmit="Login">
+			<p><label>Korisnicko: </label><InputText @bind-Value="trenutniKorisnik.Username" /></p>
+			<p><label>Sifra: </label><InputText @bind-Value="trenutniKorisnik.Password" /></p>
+			<button type="submit">Uloguj se!</button>
+		</EditForm>
+	}
+}
+
+
+@code
+{
+	public Korisnik trenutniKorisnik { get; set; } = new Korisnik();
+	public Poruka trenutnaPoruka { get; set; } = new Poruka();
+	public List<Poruka> primljenePoruke { get; set; } = new List<Poruka>();
+	public string PorukaOdServera;
+	public bool LogIn;
+	public bool chatAktivan;
+	public HubConnection HC;
+
+	protected override async Task OnInitializedAsync()
+	{
+		HC = new HubConnectionBuilder().WithUrl(NavMan.ToAbsoluteUri("ch")).Build();
+
+		HC.On<string>("Poruka", (s) =>
+		{
+			PorukaOdServera = s;
+			StateHasChanged();
+		});
+
+		HC.On<Korisnik>("Uloguj", (k) =>
+		{
+			trenutniKorisnik = k;
+			chatAktivan = true;
+			StateHasChanged();
+		});
+
+		HC.On<Poruka>("ChatPoruka", (p) =>
+		{
+			if (LogIn)
+			{
+				primljenePoruke.Add(p);
+				StateHasChanged();
+			}
+		});
+
+
+
+		await HC.StartAsync();
+	}
+
+	public void PosaljiPoruku()
+	{
+		trenutnaPoruka.Posiljaoc = trenutniKorisnik;
+		trenutnaPoruka.VremeSlanja = DateTime.Now;
+		HC.SendAsync("PorukaOdKlijenta", trenutnaPoruka);
+		trenutnaPoruka = new Poruka();
+	}
+
+	public void Toggle()
+	{
+		LogIn = !LogIn;
+		trenutniKorisnik = new Korisnik();
+		StateHasChanged();
+	}
+
+	public void Login()
+	{
+		PorukaOdServera = "";
+		HC.SendAsync("Login", trenutniKorisnik);
+	}
+
+	public void Registruj()
+	{
+		PorukaOdServera = "";
+		HC.SendAsync("Registracija", trenutniKorisnik);
+		trenutniKorisnik = new Korisnik();
+	}
+
+
+	public void Konekcija()
+	{
+		HC.SendAsync("Test", trenutnaPoruka);
+		trenutnaPoruka = new Poruka();
+	}
+}
